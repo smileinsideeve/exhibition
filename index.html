@@ -604,8 +604,7 @@ function showToast(msg) {
 }
 
 render();
-</script>
-<!-- ===== 共用投票（Firebase）：貼在 </body> 之前 ===== -->
+<!-- ===== 共用投票（Firebase）v2：貼在 </body> 之前 ===== -->
 <style>
   #ranking { display:none; }
   #ranking.visible { display:block; }
@@ -638,6 +637,8 @@ render();
     appId: "1:548165816162:web:971ca7af9a2e7ec691663b"
   };
 
+  console.log("✅ 共用投票程式已載入 (Firebase v2)");
+
   const app = initializeApp(firebaseConfig);
   const db  = getDatabase(app);
 
@@ -654,7 +655,7 @@ render();
       const id = m ? m[1] : null;
       const titleEl = card.querySelector('.card-title');
       const title = titleEl ? titleEl.textContent.trim() : ("No." + id);
-      return id ? { id, title } : null;
+      return id ? { id, title, card } : null;
     }).filter(Boolean);
   }
 
@@ -676,7 +677,7 @@ render();
     if (liked[id]) card.classList.add('voted');
   }
 
-  window.toggle = function (rawId) {
+  function vote(rawId) {
     const id = String(rawId);
     const wasLiked = !!liked[id];
     const delta = wasLiked ? -1 : 1;
@@ -688,10 +689,12 @@ render();
       saveLiked();
       paintCard(id);
       toast(wasLiked ? "取消投票" : "❤️ 投票成功！");
-    }).catch(() => {
+    }).catch((err) => {
+      console.error("投票寫入失敗：", err);
       toast("⚠️ 連線失敗，請稍後再試");
     });
-  };
+  }
+  window.toggle = vote;
 
   function renderRanking(photos) {
     const wrap = document.getElementById('ranking');
@@ -720,8 +723,28 @@ render();
     });
   }
 
+  function takeOverButtons(photos) {
+    let bound = 0;
+    photos.forEach(p => {
+      let btn = p.card.querySelector('.heart-btn')
+             || p.card.querySelector('[onclick]')
+             || (document.getElementById('hc-' + p.id) ? document.getElementById('hc-' + p.id).closest('button, .heart-btn, a, div') : null);
+      if (!btn) return;
+      const fresh = btn.cloneNode(true);
+      fresh.removeAttribute('onclick');
+      btn.parentNode.replaceChild(fresh, btn);
+      fresh.style.cursor = 'pointer';
+      fresh.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); vote(p.id); });
+      bound++;
+    });
+    console.log("🔗 已接管愛心按鈕數量：", bound, "/", photos.length);
+    if (bound === 0) console.warn("⚠️ 找不到愛心按鈕，請把一張卡片的 HTML 貼給我看。");
+  }
+
   function start() {
     const photos = getPhotos();
+    console.log("📷 偵測到照片數量：", photos.length);
+    takeOverButtons(photos);
     photos.forEach(p => paintCard(p.id));
     onValue(ref(db, 'votes'), (snap) => {
       votes = snap.val() || {};
@@ -730,6 +753,8 @@ render();
         if (el) el.textContent = votes[p.id] || 0;
       });
       renderRanking(photos);
+    }, (err) => {
+      console.error("讀取 Firebase 失敗（可能是規則沒開放）：", err);
     });
   }
 
